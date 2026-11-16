@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Étiquettes Balisage</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:15px system-ui,Arial,sans-serif;background:#f3f4f6;color:#111827}
+header{background:#111827;color:#fff;padding:12px 16px;font-weight:700;font-size:17px}
+main{max-width:980px;margin:0 auto;padding:12px}
+section{background:#fff;border-radius:10px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px #0002}
+h2{margin:0 0 8px;font-size:15px}
+button,.btn{background:#111827;color:#fff;border:0;border-radius:8px;padding:11px 14px;font-size:15px;cursor:pointer;display:inline-block}
+button.sec{background:#e5e7eb;color:#111827}
+button.red{background:#b91c1c}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#msg{margin-top:8px;font-size:14px;white-space:pre-line}
+.err{color:#b91c1c}.ok{color:#047857}
+.tw{overflow-x:auto;max-height:50vh}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{border-bottom:1px solid #e5e7eb;padding:3px;text-align:left}
+th{position:sticky;top:0;background:#f9fafb;font-size:13px}
+td input{width:100%;padding:7px;border:1px solid #d1d5db;border-radius:6px;font-size:14px}
+td.n input{width:64px}
+tr.sel{background:#eff6ff}tr.bad input{border-color:#b91c1c;background:#fef2f2}
+label.f{display:flex;flex-direction:column;font-size:13px;gap:3px}
+label.f input,label.f select{padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;width:130px}
+.grid{display:flex;gap:12px;flex-wrap:wrap}
+canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-width:100%}
+#ov{position:fixed;inset:0;background:#000b;display:none;overflow:auto;z-index:9;padding:12px}
+#ov .box{background:#fff;border-radius:10px;padding:12px;max-width:520px;margin:auto}
+#ov canvas{width:min(100%,360px);border:1px dashed #6b7280;display:block;margin:6px 0 2px}
+#pa{display:none}
+@media print{body>*:not(#pa){display:none!important}#pa{display:block}#pa img{display:block;width:65mm;height:38mm;break-after:page}@page{size:65mm 38mm;margin:0}}
+</style>
+</head>
+<body>
+<header>🏷️ Étiquettes Balisage — 6,5 × 3,8 cm</header>
+<main>
+<section>
+  <h2>1. Importer</h2>
+  <div class="row">
+    <label class="btn">📂 Importer Excel<input id="file" type="file" accept=".xlsx,.xls,.csv" hidden></label>
+    <button class="sec" id="add">+ Ligne</button>
+    <a href="exemple_etiquettes.xlsx" download>Exemple Excel</a>
+  </div>
+  <div id="msg"></div>
+</section>
+
+<section>
+  <h2>2. Articles</h2>
+  <div class="tw"><table>
+    <thead><tr><th>CODE</th><th>DESIGNATION</th><th>PRIX BARRÉ</th><th>PRIX VENTE</th><th>Qté</th><th></th></tr></thead>
+    <tbody id="tb"></tbody>
+  </table></div>
+  <div id="cnt" style="margin-top:6px;font-size:13px"></div>
+</section>
+
+<section>
+  <h2>3. Aperçu (étiquette sélectionnée)</h2>
+  <canvas id="pv" class="pv"></canvas>
+</section>
+
+<section>
+  <h2>4. Impression</h2>
+  <div class="row">
+    <button class="sec" id="bPrev">👁️ Aperçu avant impression</button>
+    <button id="bPrint">🖨️ Imprimer (Citizen)</button>
+    <button class="sec" id="bTest">Test 1 étiquette</button>
+    <button class="sec" id="bPdf">📄 Exporter en PDF</button>
+  </div>
+  <div id="prog" style="margin-top:8px"></div>
+  <details style="margin-top:10px"><summary>⚙️ Réglages</summary>
+    <div class="grid" style="margin-top:8px">
+      <label class="f">Résolution<select id="sDpi"><option>203</option><option>300</option></select></label>
+      <label class="f">Marge (mm)<input id="sMargin" type="number" step="0.5" min="1" max="6"></label>
+      <label class="f">Espacement inter-étiquettes (mm)<input id="sFeed" type="number" step="0.5" min="0" max="30"></label>
+      <label class="f">Décalage gauche (mm)<input id="sLeft" type="number" step="0.5" min="0" max="20"></label>
+      <label class="f">Largeur papier imprimable (mm)<input id="sPaper" type="number" step="1" min="40" max="104"></label>
+      <label class="f">Étiquettes par lot (RawBT)<input id="sBatch" type="number" min="1" max="50"></label>
+      <label class="f">Date sur l'étiquette<input id="sDate"></label>
+      <label class="f">Envoyer FF (saut au repère)<select id="sFF"><option value="0">Non</option><option value="1">Oui</option></select></label>
+    </div>
+  </details>
+</section>
+</main>
+
+<div id="ov"><div class="box"><div class="row"><button id="oPrint">🖨️ Imprimer</button><button class="sec" id="oClose">Fermer</button></div><div id="ovList"></div></div></div>
+<div id="pa"></div>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script>
+"use strict";
+/* ============ Utilitaires ============ */
+const $ = s => document.querySelector(s);
+const today = () => new Date().toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric'});
+const DEF = {dpi:203, margin:2.5, feed:3, left:3.5, paper:72, batch:10, date:today(), ff:0};
+let S = Object.assign({}, DEF, JSON.parse(localStorage.getItem('S') || '{}'));
+S.date = today();
+let rows = [], sel = 0, nextBatch = null, jobs = [];
+
+/* Conversion nombre : accepte "129,95", "1 299.00", vide -> null, invalide -> NaN */
+function num(v){
+  if (v == null || String(v).trim() === '') return null;
+  if (typeof v === 'number') return v;
+  const t = String(v).replace(/\s|DH|MAD/gi, '').replace(',', '.');
+  return /^\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN;
+}
+const fmt = n => n.toFixed(2).replace('.', ',');
+const norm = s => String(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z]/g, '');
+function msg(t, cls){ const m = $('#msg'); m.textContent = t; m.className = cls || ''; }
+
+/* ============ Import Excel / CSV ============ */
+async function importFile(f){
+  try {
+    let wb;
+    if (/\.csv$/i.test(f.name)) {
+      const t = await f.text(), l = t.split(/\r?\n/)[0];
+      const fs = (l.match(/;/g) || []).length > (l.match(/,/g) || []).length ? ';' : ',';
+      wb = XLSX.read(t, {type:'string', FS:fs});
+    } else wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    if (!ws) throw new Error('Fichier vide.');
+    const data = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:''});
+    if (!data.length) throw new Error('Fichier vide.');
+    const h = data[0].map(norm);
+    const ix = {
+      code: h.indexOf('CODE'),
+      des: h.indexOf('DESIGNATION'),
+      old: h.findIndex(x => x.startsWith('PRIXBARR')),
+      price: h.findIndex(x => x === 'PRIXDEVENTE' || x === 'PRIXVENTE')
+    };
+    const miss = Object.entries({CODE:ix.code, DESIGNATION:ix.des, 'PRIX BARREE':ix.old, 'PRIX DE VENTE':ix.price})
+      .filter(([, i]) => i < 0).map(([k]) => k);
+    if (miss.length) throw new Error('Colonnes manquantes : ' + miss.join(', ') + '\n(ligne 1 attendue : CODE | DESIGNATION | PRIX BARREE | PRIX DE VENTE)');
+    const txt = v => (typeof v === 'number' && Number.isInteger(v)) ? v.toFixed(0) : String(v ?? '').trim();
+    rows = data.slice(1).filter(r => r.some(c => String(c).trim() !== '')).map(r => ({
+      code: txt(r[ix.code]), des: txt(r[ix.des]), old: txt(r[ix.old]), price: txt(r[ix.price]), qty: 1
+    }));
+    sel = 0; nextBatch = null; $('#prog').innerHTML = '';
+    renderTable();
+    const bad = invalidLines();
+    msg(rows.length + ' article(s) importé(s).' + (bad.length ? '\n⚠️ Prix invalide aux lignes : ' + bad.join(', ') : ''), bad.length ? 'err' : 'ok');
+  } catch (e) { msg('❌ ' + e.message, 'err'); }
+}
+function invalidLines(){
+  const b = [];
+  rows.forEach((r, i) => { const p = num(r.price), o = num(r.old); if (p === null || isNaN(p) || isNaN(o)) b.push(i + 1); });
+  return b;
+}
+
+/* ============ Tableau ============ */
+function renderTable(){
+  const tb = $('#tb'); tb.innerHTML = '';
+  rows.forEach((r, i) => {
+    const p = num(r.price), o = num(r.old);
+    const tr = document.createElement('tr');
+    tr.className = (i === sel ? 'sel ' : '') + ((p === null || isNaN(p) || isNaN(o)) ? 'bad' : '');
+    const cell = (k, cls, type) => `<td class="${cls || ''}"><input data-i="${i}" data-k="${k}" ${type ? 'type="' + type + '" min="1"' : ''} value="${String(r[k]).replace(/"/g, '&quot;')}"></td>`;
+    tr.innerHTML = cell('code') + cell('des') + cell('old') + cell('price') + cell('qty', 'n', 'number') +
+      `<td><button class="red" data-del="${i}">✖</button></td>`;
+    tr.onclick = () => { sel = i; drawPreview(); [...tb.children].forEach((t, j) => t.classList.toggle('sel', j === i)); };
+    tb.appendChild(tr);
+  });
+  $('#cnt').textContent = rows.length + ' ligne(s) — ' + total() + ' étiquette(s) à imprimer';
+  drawPreview();
+}
+const total = () => rows.reduce((a, r) => a + Math.max(1, parseInt(r.qty) || 1), 0);
+$('#tb').addEventListener('input', e => {
+  const t = e.target, i = +t.dataset.i; if (isNaN(i)) return;
+  rows[i][t.dataset.k] = t.value;
+  const p = num(rows[i].price), o = num(rows[i].old);
+  t.closest('tr').classList.toggle('bad', p === null || isNaN(p) || isNaN(o));
+  $('#cnt').textContent = rows.length + ' ligne(s) — ' + total() + ' étiquette(s) à imprimer';
+  sel = i; drawPreview();
+});
+$('#tb').addEventListener('click', e => {
+  const d = e.target.dataset.del; if (d === undefined) return;
+  e.stopPropagation(); rows.splice(+d, 1); sel = Math.max(0, Math.min(sel, rows.length - 1)); renderTable();
+});
+$('#add').onclick = () => { rows.push({code:'', des:'', old:'', price:'', qty:1}); sel = rows.length - 1; renderTable(); };
+$('#file').onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; };
+
+/* ============ Code128 (B ou C, sans librairie) ============ */
+const P = ("212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 111242 121142 121241 114212 124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 114131 311141 411131 211412 211214 211232 2331112").split(' ');
+function code128(txt){
+  let v = [];
+  if (/^\d+$/.test(txt) && txt.length >= 4) {              // Code C (paires de chiffres)
+    v = [105];
+    const n = txt.length - (txt.length % 2);
+    for (let i = 0; i < n; i += 2) v.push(+txt.substr(i, 2));
+    if (txt.length % 2) v.push(100, txt.charCodeAt(txt.length - 1) - 32); // bascule B pour le dernier chiffre
+  } else {                                                  // Code B (ASCII)
+    v = [104];
+    for (const ch of txt) { const c = ch.charCodeAt(0); if (c >= 32 && c <= 126) v.push(c - 32); }
+  }
+  let sum = v[0]; for (let i = 1; i < v.length; i++) sum += v[i] * i;
+  v.push(sum % 103, 106);
+  return v.map(x => P[x]).join('');
+}
+
+/* ============ Rendu d'une étiquette (coordonnées en unités 203 dpi : 520 × 304) ============ */
+const W0 = 520, H0 = 304, FONT = 'Arial, Helvetica, sans-serif';
+function wrap(x, text, maxW){
+  const words = text.split(/\s+/).filter(Boolean), lines = []; let cur = '';
+  for (const w of words) {
+    const t = cur ? cur + ' ' + w : w;
+    if (x.measureText(t).width <= maxW || !cur) cur = t; else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur); return lines;
+}
+function drawLabel(cv, r){
+  const k = S.dpi / 203;
+  cv.width = Math.round(65 / 25.4 * S.dpi); cv.height = Math.round(38 / 25.4 * S.dpi);
+  const x = cv.getContext('2d');
+  x.setTransform(k, 0, 0, k, 0, 0);
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W0, H0); x.fillStyle = '#000'; x.strokeStyle = '#000';
+  const M = Math.round(S.margin / 25.4 * 203);
+
+  // CODE (haut gauche) et PRIX BARRÉ (haut droite, barré)
+  const old = num(r.old);
+  let oldW = 0;
+  if (old) {
+    const t = fmt(old); x.font = `bold 30px ${FONT}`; x.textAlign = 'right';
+    oldW = x.measureText(t).width; const xr = W0 - M, y = M + 24;
+    x.fillText(t, xr, y); x.lineWidth = 3; x.beginPath(); x.moveTo(xr - oldW - 4, y - 4); x.lineTo(xr + 2, y - 18); x.stroke();
+  }
+  x.textAlign = 'left'; let fs = 24;
+  x.font = `bold ${fs}px ${FONT}`;
+  while (fs > 12 && x.measureText(r.code).width > W0 - 2 * M - oldW - 14) x.font = `bold ${--fs}px ${FONT}`;
+  x.fillText(r.code, M, M + 20);
+
+  // DESIGNATION : 3 lignes max, police réduite si besoin, sinon troncature « … »
+  const des = String(r.des).toUpperCase(), top = M + 38, maxH = 100, maxW = W0 - 2 * M;
+  let size = 38, lines;
+  for (; size >= 18; size -= 2) {
+    x.font = `bold ${size}px ${FONT}`; lines = wrap(x, des, maxW);
+    if (lines.length <= 3 && lines.length * size * 1.08 <= maxH) break;
+  }
+  if (size < 18) {
+    size = 18; x.font = `bold 18px ${FONT}`; lines = wrap(x, des, maxW);
+    if (lines.length > 3) { lines = lines.slice(0, 3); let l = lines[2]; while (l.length && x.measureText(l + '…').width > maxW) l = l.slice(0, -1); lines[2] = l + '…'; }
+  }
+  x.textAlign = 'left'; x.font = `bold ${size}px ${FONT}`;
+  lines.forEach((l, i) => x.fillText(l, M, top + size * 0.9 + i * size * 1.08));
+
+  // PRIX DE VENTE : entier grand + décimales en petit
+  const pr = num(r.price);
+  if (pr != null && !isNaN(pr)) {
+    const [ip, dp] = pr.toFixed(2).split('.'), base = H0 - M - 12;
+    let ps = 130, dw;
+    do { x.font = `bold ${ps}px ${FONT}`; const iw = x.measureText(ip).width; x.font = `bold ${Math.round(ps * 0.36)}px ${FONT}`; dw = iw + x.measureText(',' + dp).width; ps -= 4; } while (dw > 268 && ps > 40);
+    ps += 4; x.font = `bold ${ps}px ${FONT}`; const iw = x.measureText(ip).width;
+    x.fillText(ip, M, base);
+    x.font = `bold ${Math.round(ps * 0.36)}px ${FONT}`; x.fillText(',' + dp, M + iw + 2, base);
+  }
+
+  // Code-barres (bas droite) + date
+  const bx = 312, bw = W0 - M - bx;
+  if (r.code) {
+    const bars = code128(String(r.code)), mods = [...bars].reduce((a, c) => a + +c, 0);
+    const mw = Math.max(1, Math.floor(bw / mods));
+    let cx = bx, isBar = true;
+    for (const c of bars) { const w = +c * mw; if (isBar) x.fillRect(cx, 178, w, 70); cx += w; isBar = !isBar; }
+  }
+  x.font = `bold 20px ${FONT}`; x.textAlign = 'left'; x.fillText(S.date, bx, H0 - M - 8);
+}
+
+/* ============ Aperçu ============ */
+function drawPreview(){
+  const cv = $('#pv');
+  if (!rows[sel]) { cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); return; }
+  drawLabel(cv, rows[sel]);
+}
+function expanded(){ const o = []; rows.forEach(r => { for (let i = 0; i < Math.max(1, parseInt(r.qty) || 1); i++) o.push(r); }); return o; }
+function check(){
+  if (!rows.length) { msg('❌ Aucun article à imprimer.', 'err'); return false; }
+  const b = invalidLines();
+  if (b.length) { msg('❌ Prix de vente ou prix barré non numérique aux lignes : ' + b.join(', '), 'err'); return false; }
+  return true;
+}
+function showPreview(){
+  if (!check()) return;
+  const L = $('#ovList'); L.innerHTML = '';
+  rows.forEach((r, i) => {
+    const cv = document.createElement('canvas'); drawLabel(cv, r);
+    const p = document.createElement('div'); p.textContent = `#${i + 1} — ×${Math.max(1, parseInt(r.qty) || 1)}`;
+    L.append(cv, p);
+  });
+  $('#ov').style.display = 'block';
+}
+
+/* ============ Impression ESC/POS raster (Citizen CMP-30II) via RawBT ============ */
+function raster(cv){
+  const W = Math.round(S.paper / 25.4 * S.dpi / 8) * 8, H = cv.height, left = Math.round(S.left / 25.4 * S.dpi);
+  const t = document.createElement('canvas'); t.width = W; t.height = H;
+  const c = t.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, W, H); c.drawImage(cv, left, 0);
+  const d = c.getImageData(0, 0, W, H).data, wb = W / 8, out = new Uint8Array(8 + wb * H);
+  out.set([0x1D, 0x76, 0x30, 0, wb & 255, wb >> 8, H & 255, H >> 8]);
+  for (let y = 0; y < H; y++) for (let xb = 0; xb < wb; xb++) {
+    let b = 0;
+    for (let bit = 0; bit < 8; bit++) { const i = (y * W + xb * 8 + bit) * 4; if (d[i] * .3 + d[i + 1] * .59 + d[i + 2] * .11 < 140) b |= 0x80 >> bit; }
+    out[8 + y * wb + xb] = b;
+  }
+  return out;
+}
+function buildJob(list){
+  const parts = [new Uint8Array([0x1B, 0x40])], cv = document.createElement('canvas');
+  let feed = Math.round(S.feed / 25.4 * S.dpi);
+  for (const r of list) {
+    drawLabel(cv, r); parts.push(raster(cv));
+    for (let f = feed; f > 0; f -= 255) parts.push(new Uint8Array([0x1B, 0x4A, Math.min(255, f)]));
+    if (+S.ff) parts.push(new Uint8Array([0x0C]));
+  }
+  const n = parts.reduce((a, p) => a + p.length, 0), all = new Uint8Array(n); let o = 0;
+  parts.forEach(p => { all.set(p, o); o += p.length; });
+  let s = ''; for (let i = 0; i < n; i += 8192) s += String.fromCharCode.apply(null, all.subarray(i, i + 8192));
+  return btoa(s);
+}
+function sendJob(b64){
+  location.href = 'intent:base64,' + b64 + '#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;';
+}
+function startPrint(){
+  if (!check()) return;
+  const all = expanded(), n = Math.max(1, +S.batch || 10);
+  jobs = []; for (let i = 0; i < all.length; i += n) jobs.push(all.slice(i, i + n));
+  nextBatch = 0; sendNext();
+}
+function sendNext(){
+  if (nextBatch == null || nextBatch >= jobs.length) return;
+  const i = nextBatch++; msg(`Envoi du lot ${i + 1}/${jobs.length} vers RawBT…`, 'ok');
+  sendJob(buildJob(jobs[i]));
+  $('#prog').innerHTML = nextBatch < jobs.length ? `<button id="bNext">Envoyer le lot suivant (${nextBatch + 1}/${jobs.length})</button>` : '✅ Dernier lot envoyé.';
+  const b = $('#bNext'); if (b) b.onclick = sendNext;
+}
+function testPrint(){
+  const r = rows[sel]; if (!r) return msg('❌ Sélectionnez un article.', 'err');
+  if (!check()) return; sendJob(buildJob([r]));
+}
+
+/* ============ Export PDF (impression navigateur → « Enregistrer au format PDF ») ============ */
+function exportPdf(){
+  if (!check()) return;
+  const pa = $('#pa'); pa.innerHTML = '';
+  const cv = document.createElement('canvas'), cache = new Map();
+  expanded().forEach(r => {
+    if (!cache.has(r)) { drawLabel(cv, r); cache.set(r, cv.toDataURL('image/png')); }
+    const im = new Image(); im.src = cache.get(r); pa.appendChild(im);
+  });
+  setTimeout(() => window.print(), 150);
+}
+
+/* ============ Réglages ============ */
+const map = {sDpi:'dpi', sMargin:'margin', sFeed:'feed', sLeft:'left', sPaper:'paper', sBatch:'batch', sDate:'date', sFF:'ff'};
+Object.entries(map).forEach(([id, k]) => {
+  const el = $('#' + id); el.value = S[k];
+  el.onchange = () => { S[k] = (id === 'sDate') ? el.value : parseFloat(el.value) || 0; if (id === 'sDpi') S.dpi = +el.value; localStorage.setItem('S', JSON.stringify(S)); drawPreview(); };
+});
+$('#bPrev').onclick = showPreview; $('#bPrint').onclick = startPrint; $('#bTest').onclick = testPrint; $('#bPdf').onclick = exportPdf;
+$('#oClose').onclick = () => $('#ov').style.display = 'none';
+$('#oPrint').onclick = () => { $('#ov').style.display = 'none'; startPrint(); };
+window.addEventListener('afterprint', () => $('#pa').innerHTML = '');
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+renderTable();
+</script>
+</body>
+</html>

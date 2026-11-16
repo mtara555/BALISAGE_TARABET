@@ -1,0 +1,40 @@
+# Étiquettes Balisage — PWA Android (Citizen CMP-30IIBT)
+
+Application web installable (PWA), 100 % hors ligne après la première ouverture.
+Étiquette **6,5 × 3,8 cm** : CODE, DESIGNATION, PRIX BARRÉ, PRIX DE VENTE (décimales en petit), code-barres Code128 et date.
+
+## 1. Déploiement sur GitHub Pages
+1. Créez un dépôt GitHub (ex. `balisage`) et envoyez **tous** les fichiers à la racine :
+   `index.html`, `manifest.webmanifest`, `sw.js`, `icon-192.png`, `icon-512.png`, `exemple_etiquettes.xlsx`, `vendor/xlsx.full.min.js`, `README.md`.
+2. GitHub → **Settings → Pages** → *Source* : `Deploy from a branch` → branche `main`, dossier `/ (root)` → **Save**.
+3. Après 1 à 2 minutes, l'application est sur `https://<utilisateur>.github.io/balisage/`.
+4. **Mise à jour** : après chaque modification, changez `VERSION` dans `sw.js` (ex. `balisage-v2`) pour forcer le rafraîchissement du cache.
+
+## 2. Installation sur le téléphone Android
+1. Ouvrez l'adresse dans **Chrome** → menu ⋮ → **Ajouter à l'écran d'accueil / Installer l'application**.
+2. Installez aussi **RawBT** (Play Store, gratuit) : c'est lui qui envoie les données à l'imprimante en Bluetooth.
+
+## 3. Configuration de l'imprimante Citizen CMP-30IIBT
+1. Allumez l'imprimante → Paramètres Android → Bluetooth → **associez** la CMP-30IIBT (code PIN souvent `0000` ou `1234`).
+2. Ouvrez **RawBT** → *Imprimante* → choisissez la CMP-30IIBT → mode **ESC/POS**, largeur **80 mm / 576 points**, résolution 203 dpi → *Test d'impression*.
+3. Chargez le rouleau d'étiquettes. Si l'imprimante est réglée sur le capteur d'espace (gap) ou de repère noir (réglage Citizen, hors application), mettez **« Envoyer FF »** sur *Oui* dans les réglages de l'application pour qu'elle avance à l'étiquette suivante. Sinon (rouleau continu), utilisez **Espacement inter-étiquettes** (3 mm par défaut).
+
+## 4. Utilisation
+1. **Importer Excel** : fichier .xlsx / .xls / .csv, ligne 1 = `CODE | DESIGNATION | PRIX BARREE | PRIX DE VENTE` (voir `exemple_etiquettes.xlsx`).
+2. Corrigez les lignes dans le tableau, réglez **Qté**, supprimez avec ✖. Touchez une ligne pour voir son aperçu.
+3. **Aperçu avant impression** : toutes les étiquettes.
+4. **Test 1 étiquette** puis **Imprimer** : les étiquettes partent par lots (10 par défaut) ; touchez « Envoyer le lot suivant ».
+5. **Exporter en PDF** : ouvre l'impression Android → *Enregistrer au format PDF* (secours si l'imprimante est indisponible).
+
+## 5. Réglages utiles
+| Réglage | Rôle |
+|---|---|
+| Décalage gauche | Étiquette 65 mm sur zone imprimable 72 mm : 3,5 mm = centrée. À ajuster au test. |
+| Largeur papier imprimable | 72 mm pour la CMP-30II (576 points à 203 dpi). |
+| Espacement inter-étiquettes | Avance du papier après chaque étiquette. |
+| Étiquettes par lot | Réduire (ex. 5) si RawBT refuse un lot trop gros. |
+
+## 6. Règles de mise en page
+- Désignation en majuscules : 3 lignes max, police réduite automatiquement, puis troncature avec « … ».
+- Prix barré affiché seulement s'il est renseigné. Pas de « DH » ni de pourcentage.
+- Prix non numérique : la ligne passe en rouge et l'impression est bloquée.
