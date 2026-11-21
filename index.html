@@ -38,6 +38,7 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
 #pa{display:none}
 @media print{body>*:not(#pa){display:none!important}#pa{display:block}#pa img{display:block;width:65mm;height:38mm;break-after:page}@page{size:65mm 38mm;margin:0}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js"></script>
 </head>
 <body>
 <header>🏷️ Étiquettes Balisage — 6,5 × 3,8 cm</header>
@@ -83,8 +84,17 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
           <option value="windows">Windows (pont local)</option>
         </select>
       </label>
-      <label class="f">URL du pont local
+      <label class="f">Type de pont Windows
+        <select id="sBridgeType">
+          <option value="qz">QZ Tray (recommandé)</option>
+          <option value="http">Serveur HTTP local</option>
+        </select>
+      </label>
+      <label class="f">URL du pont HTTP
         <input id="sBridge" type="text" class="wide" value="http://127.0.0.1:9100/print">
+      </label>
+      <label class="f">Nom imprimante (QZ Tray)
+        <input id="sPrinter" type="text" class="wide" value="" placeholder="(vide = imprimante par défaut)">
       </label>
       <label class="f">Résolution<select id="sDpi"><option>203</option><option>300</option></select></label>
       <label class="f">Marge (mm)<input id="sMargin" type="number" step="0.5" min="1" max="6"></label>
@@ -113,7 +123,7 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
 const $ = s => document.querySelector(s);
 const today = () => new Date().toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric'});
 const DEF = {dpi:203, margin:2.5, feed:3, left:3.5, paper:72, batch:10, date:today(), ff:0,
-             mode:'rawbt', bridge:'http://127.0.0.1:9100/print'};
+             mode:'rawbt', bridgeType:'qz', bridge:'http://127.0.0.1:9100/print', printer:''};
 let S = Object.assign({}, DEF, JSON.parse(localStorage.getItem('S') || '{}'));
 S.date = today();
 let rows = [], sel = 0, nextBatch = null, jobs = [];
@@ -204,12 +214,12 @@ $('#file').onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]
 const P = ("212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 111242 121142 121241 114212 124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 114131 311141 411131 211412 211214 211232 2331112").split(' ');
 function code128(txt){
   let v = [];
-  if (/^\d+$/.test(txt) && txt.length >= 4) {              // Code C (paires de chiffres)
+  if (/^\d+$/.test(txt) && txt.length >= 4) {
     v = [105];
     const n = txt.length - (txt.length % 2);
     for (let i = 0; i < n; i += 2) v.push(+txt.substr(i, 2));
-    if (txt.length % 2) v.push(100, txt.charCodeAt(txt.length - 1) - 32); // bascule B pour le dernier chiffre
-  } else {                                                  // Code B (ASCII)
+    if (txt.length % 2) v.push(100, txt.charCodeAt(txt.length - 1) - 32);
+  } else {
     v = [104];
     for (const ch of txt) { const c = ch.charCodeAt(0); if (c >= 32 && c <= 126) v.push(c - 32); }
   }
@@ -218,7 +228,7 @@ function code128(txt){
   return v.map(x => P[x]).join('');
 }
 
-/* ============ Rendu d'une étiquette (coordonnées en unités 203 dpi : 520 × 304) ============ */
+/* ============ Rendu d'une étiquette ============ */
 const W0 = 520, H0 = 304, FONT = 'Arial, Helvetica, sans-serif';
 function wrap(x, text, maxW){
   const words = text.split(/\s+/).filter(Boolean), lines = []; let cur = '';
@@ -236,7 +246,6 @@ function drawLabel(cv, r){
   x.fillStyle = '#fff'; x.fillRect(0, 0, W0, H0); x.fillStyle = '#000'; x.strokeStyle = '#000';
   const M = Math.round(S.margin / 25.4 * 203);
 
-  // CODE (haut gauche) et PRIX BARRÉ (haut droite, barré)
   const old = num(r.old);
   let oldW = 0;
   if (old) {
@@ -249,7 +258,6 @@ function drawLabel(cv, r){
   while (fs > 12 && x.measureText(r.code).width > W0 - 2 * M - oldW - 14) x.font = `bold ${--fs}px ${FONT}`;
   x.fillText(r.code, M, M + 20);
 
-  // DESIGNATION : 3 lignes max, police réduite si besoin, sinon troncature « … »
   const des = String(r.des).toUpperCase(), top = M + 38, maxH = 100, maxW = W0 - 2 * M;
   let size = 38, lines;
   for (; size >= 18; size -= 2) {
@@ -263,7 +271,6 @@ function drawLabel(cv, r){
   x.textAlign = 'left'; x.font = `bold ${size}px ${FONT}`;
   lines.forEach((l, i) => x.fillText(l, M, top + size * 0.9 + i * size * 1.08));
 
-  // PRIX DE VENTE : entier grand + décimales en petit
   const pr = num(r.price);
   if (pr != null && !isNaN(pr)) {
     const [ip, dp] = pr.toFixed(2).split('.'), base = H0 - M - 12;
@@ -274,7 +281,6 @@ function drawLabel(cv, r){
     x.font = `bold ${Math.round(ps * 0.36)}px ${FONT}`; x.fillText(',' + dp, M + iw + 2, base);
   }
 
-  // Code-barres (bas droite) + date
   const bx = 312, bw = W0 - M - bx;
   if (r.code) {
     const bars = code128(String(r.code)), mods = [...bars].reduce((a, c) => a + +c, 0);
@@ -337,30 +343,50 @@ function buildJob(list){
   return btoa(s);
 }
 
-/* ============ Envoi : RawBT (Android) ou pont local (Windows) ============ */
+/* ============ Envoi : RawBT / QZ Tray / HTTP ============ */
+function bytesFromB64(b64){
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 async function sendJob(b64){
+  // --- Android / RawBT ---
   if (S.mode === 'rawbt') {
-    // Comportement Android inchangé
     location.href = 'intent:base64,' + b64 +
       '#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;';
     return;
   }
-  // Mode Windows : envoi des octets bruts au pont local
-  try {
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 
+  // --- Windows : QZ Tray ---
+  if (S.bridgeType === 'qz') {
+    try {
+      if (!qz.websocket.isActive()) await qz.websocket.connect();
+      const printer = S.printer || await qz.printers.getDefault();
+      const cfg = qz.configs.create(printer);
+      const hex = Array.from(bytesFromB64(b64))
+        .map(c => '\\x' + c.toString(16).padStart(2, '0')).join('');
+      const data = [{ type: 'raw', format: 'command', data: hex }];
+      await qz.print(cfg, data);
+      msg('✅ Lot envoyé à QZ Tray (' + printer + ').', 'ok');
+    } catch (e) {
+      msg('❌ QZ Tray : ' + (e.message || e), 'err');
+    }
+    return;
+  }
+
+  // --- Windows : serveur HTTP local (Node.js) ---
+  try {
     const resp = await fetch(S.bridge, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
-      body: bytes
+      body: bytesFromB64(b64)
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    msg('✅ Lot envoyé au pont local Windows.', 'ok');
+    msg('✅ Lot envoyé au pont HTTP.', 'ok');
   } catch (e) {
-    msg('❌ Pont local injoignable (' + e.message + ').\n' +
-        'Vérifiez que le pont est lancé sur ' + S.bridge, 'err');
+    msg('❌ Pont HTTP injoignable (' + e.message + ').\n' +
+        'Vérifiez que le serveur tourne sur ' + S.bridge, 'err');
   }
 }
 
@@ -390,15 +416,23 @@ async function testBridge(){
   const st = $('#bridgeStatus');
   st.textContent = '⏳ Test en cours…'; st.className = '';
   try {
+    if (S.bridgeType === 'qz') {
+      if (!qz.websocket.isActive()) await qz.websocket.connect();
+      const printers = await qz.printers.find();
+      st.textContent = '✅ QZ Tray OK. Imprimantes détectées : ' +
+        (printers.length ? printers.join(', ') : '(aucune)');
+      st.className = 'ok';
+      return;
+    }
     const resp = await fetch(S.bridge.replace(/\/print\/?$/, '/ping'), {method:'GET'});
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    st.textContent = '✅ Pont local accessible.'; st.className = 'ok';
+    st.textContent = '✅ Pont HTTP accessible.'; st.className = 'ok';
   } catch (e) {
-    st.textContent = '❌ Pont injoignable : ' + e.message; st.className = 'err';
+    st.textContent = '❌ ' + (e.message || e); st.className = 'err';
   }
 }
 
-/* ============ Export PDF (impression navigateur → « Enregistrer au format PDF ») ============ */
+/* ============ Export PDF ============ */
 function exportPdf(){
   if (!check()) return;
   const pa = $('#pa'); pa.innerHTML = '';
@@ -412,19 +446,20 @@ function exportPdf(){
 
 /* ============ Réglages ============ */
 const map = {sDpi:'dpi', sMargin:'margin', sFeed:'feed', sLeft:'left', sPaper:'paper',
-             sBatch:'batch', sDate:'date', sFF:'ff', sMode:'mode', sBridge:'bridge'};
+             sBatch:'batch', sDate:'date', sFF:'ff', sMode:'mode',
+             sBridgeType:'bridgeType', sBridge:'bridge', sPrinter:'printer'};
+const stringKeys = new Set(['date','mode','bridgeType','bridge','printer']);
 Object.entries(map).forEach(([id, k]) => {
   const el = $('#' + id); el.value = S[k];
   el.onchange = () => {
-    if (id === 'sDate') S[k] = el.value;
-    else if (id === 'sMode') S.mode = el.value;
-    else if (id === 'sBridge') S.bridge = el.value;
+    if (stringKeys.has(k)) S[k] = el.value;
     else S[k] = parseFloat(el.value) || 0;
     if (id === 'sDpi') S.dpi = +el.value;
     localStorage.setItem('S', JSON.stringify(S));
     drawPreview();
   };
 });
+
 $('#bPrev').onclick = showPreview;
 $('#bPrint').onclick = startPrint;
 $('#bTest').onclick = testPrint;
