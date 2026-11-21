@@ -29,6 +29,7 @@ td.n input{width:64px}
 tr.sel{background:#eff6ff}tr.bad input{border-color:#b91c1c;background:#fef2f2}
 label.f{display:flex;flex-direction:column;font-size:13px;gap:3px}
 label.f input,label.f select{padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;width:130px}
+label.f input.wide{width:230px}
 .grid{display:flex;gap:12px;flex-wrap:wrap}
 canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-width:100%}
 #ov{position:fixed;inset:0;background:#000b;display:none;overflow:auto;z-index:9;padding:12px}
@@ -69,21 +70,34 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
   <h2>4. Impression</h2>
   <div class="row">
     <button class="sec" id="bPrev">👁️ Aperçu avant impression</button>
-    <button id="bPrint">🖨️ Imprimer (Citizen)</button>
+    <button id="bPrint">🖨️ Imprimer</button>
     <button class="sec" id="bTest">Test 1 étiquette</button>
     <button class="sec" id="bPdf">📄 Exporter en PDF</button>
   </div>
   <div id="prog" style="margin-top:8px"></div>
   <details style="margin-top:10px"><summary>⚙️ Réglages</summary>
     <div class="grid" style="margin-top:8px">
+      <label class="f">Mode d'impression
+        <select id="sMode">
+          <option value="rawbt">Android (RawBT)</option>
+          <option value="windows">Windows (pont local)</option>
+        </select>
+      </label>
+      <label class="f">URL du pont local
+        <input id="sBridge" type="text" class="wide" value="http://127.0.0.1:9100/print">
+      </label>
       <label class="f">Résolution<select id="sDpi"><option>203</option><option>300</option></select></label>
       <label class="f">Marge (mm)<input id="sMargin" type="number" step="0.5" min="1" max="6"></label>
       <label class="f">Espacement inter-étiquettes (mm)<input id="sFeed" type="number" step="0.5" min="0" max="30"></label>
       <label class="f">Décalage gauche (mm)<input id="sLeft" type="number" step="0.5" min="0" max="20"></label>
       <label class="f">Largeur papier imprimable (mm)<input id="sPaper" type="number" step="1" min="40" max="104"></label>
-      <label class="f">Étiquettes par lot (RawBT)<input id="sBatch" type="number" min="1" max="50"></label>
+      <label class="f">Étiquettes par lot<input id="sBatch" type="number" min="1" max="50"></label>
       <label class="f">Date sur l'étiquette<input id="sDate"></label>
       <label class="f">Envoyer FF (saut au repère)<select id="sFF"><option value="0">Non</option><option value="1">Oui</option></select></label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="sec" id="bTestBridge">🔌 Tester le pont local</button>
+      <span id="bridgeStatus" style="font-size:13px"></span>
     </div>
   </details>
 </section>
@@ -98,7 +112,8 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
 /* ============ Utilitaires ============ */
 const $ = s => document.querySelector(s);
 const today = () => new Date().toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric'});
-const DEF = {dpi:203, margin:2.5, feed:3, left:3.5, paper:72, batch:10, date:today(), ff:0};
+const DEF = {dpi:203, margin:2.5, feed:3, left:3.5, paper:72, batch:10, date:today(), ff:0,
+             mode:'rawbt', bridge:'http://127.0.0.1:9100/print'};
 let S = Object.assign({}, DEF, JSON.parse(localStorage.getItem('S') || '{}'));
 S.date = today();
 let rows = [], sel = 0, nextBatch = null, jobs = [];
@@ -294,7 +309,7 @@ function showPreview(){
   $('#ov').style.display = 'block';
 }
 
-/* ============ Impression ESC/POS raster (Citizen CMP-30II) via RawBT ============ */
+/* ============ Impression ESC/POS raster ============ */
 function raster(cv){
   const W = Math.round(S.paper / 25.4 * S.dpi / 8) * 8, H = cv.height, left = Math.round(S.left / 25.4 * S.dpi);
   const t = document.createElement('canvas'); t.width = W; t.height = H;
@@ -321,25 +336,66 @@ function buildJob(list){
   let s = ''; for (let i = 0; i < n; i += 8192) s += String.fromCharCode.apply(null, all.subarray(i, i + 8192));
   return btoa(s);
 }
-function sendJob(b64){
-  location.href = 'intent:base64,' + b64 + '#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;';
+
+/* ============ Envoi : RawBT (Android) ou pont local (Windows) ============ */
+async function sendJob(b64){
+  if (S.mode === 'rawbt') {
+    // Comportement Android inchangé
+    location.href = 'intent:base64,' + b64 +
+      '#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;';
+    return;
+  }
+  // Mode Windows : envoi des octets bruts au pont local
+  try {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+
+    const resp = await fetch(S.bridge, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: bytes
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    msg('✅ Lot envoyé au pont local Windows.', 'ok');
+  } catch (e) {
+    msg('❌ Pont local injoignable (' + e.message + ').\n' +
+        'Vérifiez que le pont est lancé sur ' + S.bridge, 'err');
+  }
 }
-function startPrint(){
+
+async function startPrint(){
   if (!check()) return;
   const all = expanded(), n = Math.max(1, +S.batch || 10);
   jobs = []; for (let i = 0; i < all.length; i += n) jobs.push(all.slice(i, i + n));
-  nextBatch = 0; sendNext();
+  nextBatch = 0; await sendNext();
 }
-function sendNext(){
+async function sendNext(){
   if (nextBatch == null || nextBatch >= jobs.length) return;
-  const i = nextBatch++; msg(`Envoi du lot ${i + 1}/${jobs.length} vers RawBT…`, 'ok');
-  sendJob(buildJob(jobs[i]));
-  $('#prog').innerHTML = nextBatch < jobs.length ? `<button id="bNext">Envoyer le lot suivant (${nextBatch + 1}/${jobs.length})</button>` : '✅ Dernier lot envoyé.';
+  const i = nextBatch++; msg(`Envoi du lot ${i + 1}/${jobs.length}…`, 'ok');
+  await sendJob(buildJob(jobs[i]));
+  $('#prog').innerHTML = nextBatch < jobs.length
+    ? `<button id="bNext">Envoyer le lot suivant (${nextBatch + 1}/${jobs.length})</button>`
+    : '✅ Dernier lot envoyé.';
   const b = $('#bNext'); if (b) b.onclick = sendNext;
 }
-function testPrint(){
+async function testPrint(){
   const r = rows[sel]; if (!r) return msg('❌ Sélectionnez un article.', 'err');
-  if (!check()) return; sendJob(buildJob([r]));
+  if (!check()) return;
+  await sendJob(buildJob([r]));
+}
+
+/* ============ Test du pont local ============ */
+async function testBridge(){
+  const st = $('#bridgeStatus');
+  st.textContent = '⏳ Test en cours…'; st.className = '';
+  try {
+    const resp = await fetch(S.bridge.replace(/\/print\/?$/, '/ping'), {method:'GET'});
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    st.textContent = '✅ Pont local accessible.'; st.className = 'ok';
+  } catch (e) {
+    st.textContent = '❌ Pont injoignable : ' + e.message; st.className = 'err';
+  }
 }
 
 /* ============ Export PDF (impression navigateur → « Enregistrer au format PDF ») ============ */
@@ -355,12 +411,25 @@ function exportPdf(){
 }
 
 /* ============ Réglages ============ */
-const map = {sDpi:'dpi', sMargin:'margin', sFeed:'feed', sLeft:'left', sPaper:'paper', sBatch:'batch', sDate:'date', sFF:'ff'};
+const map = {sDpi:'dpi', sMargin:'margin', sFeed:'feed', sLeft:'left', sPaper:'paper',
+             sBatch:'batch', sDate:'date', sFF:'ff', sMode:'mode', sBridge:'bridge'};
 Object.entries(map).forEach(([id, k]) => {
   const el = $('#' + id); el.value = S[k];
-  el.onchange = () => { S[k] = (id === 'sDate') ? el.value : parseFloat(el.value) || 0; if (id === 'sDpi') S.dpi = +el.value; localStorage.setItem('S', JSON.stringify(S)); drawPreview(); };
+  el.onchange = () => {
+    if (id === 'sDate') S[k] = el.value;
+    else if (id === 'sMode') S.mode = el.value;
+    else if (id === 'sBridge') S.bridge = el.value;
+    else S[k] = parseFloat(el.value) || 0;
+    if (id === 'sDpi') S.dpi = +el.value;
+    localStorage.setItem('S', JSON.stringify(S));
+    drawPreview();
+  };
 });
-$('#bPrev').onclick = showPreview; $('#bPrint').onclick = startPrint; $('#bTest').onclick = testPrint; $('#bPdf').onclick = exportPdf;
+$('#bPrev').onclick = showPreview;
+$('#bPrint').onclick = startPrint;
+$('#bTest').onclick = testPrint;
+$('#bPdf').onclick = exportPdf;
+$('#bTestBridge').onclick = testBridge;
 $('#oClose').onclick = () => $('#ov').style.display = 'none';
 $('#oPrint').onclick = () => { $('#ov').style.display = 'none'; startPrint(); };
 window.addEventListener('afterprint', () => $('#pa').innerHTML = '');
