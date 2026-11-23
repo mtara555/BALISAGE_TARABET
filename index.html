@@ -84,6 +84,7 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
       <label class="f">Étiquettes par lot (RawBT)<input id="sBatch" type="number" min="1" max="50"></label>
       <label class="f">Date sur l'étiquette<input id="sDate"></label>
       <label class="f">Envoyer FF (saut au repère)<select id="sFF"><option value="0">Non</option><option value="1">Oui</option></select></label>
+      <label class="f">Afficher « dh »<select id="sDh"><option value="1">Oui</option><option value="0">Non</option></select></label>
       <label class="f">Imprimante<select id="sPrn"><option value="citizen">Citizen CMP-30IIBT</option><option value="xp470b">Xprinter XP-470B</option></select></label>
       <label class="f">Connexion<select id="sConn"><option value="rawbt">RawBT (Bluetooth / USB)</option><option value="usb">USB direct (XP-470B)</option></select></label>
       <label class="f">Noir = bit 0 (TSPL)<select id="sInv"><option value="1">Oui (normal)</option><option value="0">Non (si négatif)</option></select></label>
@@ -102,7 +103,7 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
 /* ============ Utilitaires ============ */
 const $ = s => document.querySelector(s);
 const today = () => new Date().toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric'});
-const DEF = {dpi:203, margin:2.5, feed:3, left:3.5, paper:72, batch:10, date:today(), ff:0, prn:'citizen', conn:'rawbt', inv:1, dir:0};
+const DEF = {dpi:203, margin:2.5, feed:3, left:3.5, paper:72, batch:10, date:today(), ff:0, dh:1, prn:'citizen', conn:'rawbt', inv:1, dir:0};
 let S = Object.assign({}, DEF, JSON.parse(localStorage.getItem('S') || '{}'));
 S.date = today();
 let rows = [], sel = 0, nextBatch = null, jobs = [];
@@ -261,6 +262,7 @@ function drawLabel(cv, r){
     ps += 4; x.font = `bold ${ps}px ${FONT}`; const iw = x.measureText(ip).width;
     x.fillText(ip, M, base);
     x.font = `bold ${Math.round(ps * 0.36)}px ${FONT}`; x.fillText(',' + dp, M + iw + 2, base);
+    if (+S.dh) { const ds = Math.round(ps * 0.3); x.font = `bold ${ds}px ${FONT}`; x.fillText('dh', M + iw + 4, base - ps * 0.72 + ds); }  // « dh » au-dessus des décimales
   }
 
   // Code-barres (bas droite) + date
@@ -403,7 +405,7 @@ function exportPdf(){
 }
 
 /* ============ Réglages ============ */
-const map = {sDpi:'dpi', sMargin:'margin', sFeed:'feed', sLeft:'left', sPaper:'paper', sBatch:'batch', sDate:'date', sFF:'ff', sPrn:'prn', sConn:'conn', sInv:'inv', sDir:'dir'};
+const map = {sDpi:'dpi', sMargin:'margin', sFeed:'feed', sLeft:'left', sPaper:'paper', sBatch:'batch', sDate:'date', sFF:'ff', sPrn:'prn', sDh:'dh', sConn:'conn', sInv:'inv', sDir:'dir'};
 Object.entries(map).forEach(([id, k]) => {
   const el = $('#' + id); el.value = S[k];
   el.onchange = () => { S[k] = ['sDate', 'sPrn', 'sConn'].includes(id) ? el.value : parseFloat(el.value) || 0; if (id === 'sDpi') S.dpi = +el.value; localStorage.setItem('S', JSON.stringify(S)); drawPreview(); };
