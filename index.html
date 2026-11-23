@@ -34,6 +34,9 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
 #ov{position:fixed;inset:0;background:#000b;display:none;overflow:auto;z-index:9;padding:12px}
 #ov .box{background:#fff;border-radius:10px;padding:12px;max-width:520px;margin:auto}
 #ov canvas{width:min(100%,360px);border:1px dashed #6b7280;display:block;margin:6px 0 2px}
+#cam{position:fixed;inset:0;background:#000;display:none;z-index:20;flex-direction:column}
+#cam video{flex:1;width:100%;min-height:0;object-fit:cover}
+#camMsg{color:#fff;padding:10px;text-align:center;font-weight:600;min-height:48px}
 #pa{display:none}
 @media print{body>*:not(#pa){display:none!important}#pa{display:block}#pa img{display:block;width:65mm;height:38mm;break-after:page}@page{size:65mm 38mm;margin:0}}
 </style>
@@ -46,13 +49,26 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
   <div class="row">
     <label class="btn">📂 Importer Excel<input id="file" type="file" accept=".xlsx,.xls,.csv" hidden></label>
     <button class="sec" id="add">+ Ligne</button>
+    <button class="sec" id="bExp">💾 Exporter la liste</button>
+    <button class="red" id="bClear">🗑️ Vider la liste</button>
     <a href="exemple_etiquettes.xlsx" download>Exemple Excel</a>
   </div>
   <div id="msg"></div>
 </section>
 
 <section>
-  <h2>2. Articles</h2>
+  <h2>📷 Scanner les articles du rayon</h2>
+  <div class="row">
+    <label class="btn">📚 Charger le catalogue<input id="fileCat" type="file" accept=".xlsx,.xls,.csv" hidden></label>
+    <button id="bScan">📷 Scanner</button>
+  </div>
+  <div class="row" style="margin-top:8px"><input id="manual" placeholder="Code article ou code-barres" inputmode="numeric" style="flex:1;min-width:0;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:15px"><button class="sec" id="bManual">Ajouter</button></div>
+  <div id="catInfo" style="font-size:13px;margin-top:6px"></div>
+  <div id="scanMsg" style="margin-top:6px;font-weight:600"></div>
+</section>
+
+<section>
+  <h2>2. Articles à imprimer</h2>
   <div class="tw"><table>
     <thead><tr><th>CODE</th><th>DESIGNATION</th><th>PRIX BARRÉ</th><th>PRIX VENTE</th><th>Qté</th><th></th></tr></thead>
     <tbody id="tb"></tbody>
@@ -94,6 +110,7 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
 </section>
 </main>
 
+<div id="cam"><video id="vid" playsinline muted></video><div id="camMsg">Visez le code-barres</div><button id="camClose" style="border-radius:0;padding:16px">✖ Fermer la caméra</button></div>
 <div id="ov"><div class="box"><div class="row"><button id="oPrint">🖨️ Imprimer</button><button class="sec" id="oClose">Fermer</button></div><div id="ovList"></div></div></div>
 <div id="pa"></div>
 
@@ -120,7 +137,7 @@ const norm = s => String(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u03
 function msg(t, cls){ const m = $('#msg'); m.textContent = t; m.className = cls || ''; }
 
 /* ============ Import Excel / CSV ============ */
-async function importFile(f){
+async function importFile(f, toCat){
   try {
     let wb;
     if (/\.csv$/i.test(f.name)) {
@@ -137,15 +154,18 @@ async function importFile(f){
       code: h.indexOf('CODE'),
       des: h.indexOf('DESIGNATION'),
       old: h.findIndex(x => x.startsWith('PRIXBARR')),
-      price: h.findIndex(x => x === 'PRIXDEVENTE' || x === 'PRIXVENTE')
+      price: h.findIndex(x => x === 'PRIXDEVENTE' || x === 'PRIXVENTE'),
+      qty: h.findIndex(x => x === 'QTE' || x === 'QUANTITE')   // optionnelle
     };
     const miss = Object.entries({CODE:ix.code, DESIGNATION:ix.des, 'PRIX BARREE':ix.old, 'PRIX DE VENTE':ix.price})
       .filter(([, i]) => i < 0).map(([k]) => k);
     if (miss.length) throw new Error('Colonnes manquantes : ' + miss.join(', ') + '\n(ligne 1 attendue : CODE | DESIGNATION | PRIX BARREE | PRIX DE VENTE)');
     const txt = v => (typeof v === 'number' && Number.isInteger(v)) ? v.toFixed(0) : String(v ?? '').trim();
-    rows = data.slice(1).filter(r => r.some(c => String(c).trim() !== '')).map(r => ({
-      code: txt(r[ix.code]), des: txt(r[ix.des]), old: txt(r[ix.old]), price: txt(r[ix.price]), qty: 1
+    const parsed = data.slice(1).filter(r => r.some(c => String(c).trim() !== '')).map(r => ({
+      code: txt(r[ix.code]), des: txt(r[ix.des]), old: txt(r[ix.old]), price: txt(r[ix.price]), qty: ix.qty >= 0 ? Math.max(1, parseInt(r[ix.qty]) || 1) : 1
     }));
+    if (toCat) { setCatalog(parsed); return msg(parsed.length + ' article(s) chargés dans le catalogue. Touchez « Scanner ».', 'ok'); }
+    rows = parsed;
     sel = 0; nextBatch = null; $('#prog').innerHTML = '';
     renderTable();
     const bad = invalidLines();
@@ -157,6 +177,76 @@ function invalidLines(){
   rows.forEach((r, i) => { const p = num(r.price), o = num(r.old); if (p === null || isNaN(p) || isNaN(o)) b.push(i + 1); });
   return b;
 }
+
+/* ============ Export de la liste (PC -> téléphone) ============ */
+function exportList(){
+  if (!rows.length) return msg('❌ Aucun article à exporter.', 'err');
+  const v = x => { const n = num(x); return (n === null || isNaN(n)) ? x : n; };
+  const aoa = [['CODE', 'DESIGNATION', 'PRIX BARREE', 'PRIX DE VENTE', 'QTE'],
+    ...rows.map(r => [r.code, r.des, v(r.old), v(r.price), Math.max(1, parseInt(r.qty) || 1)])];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Etiquettes');
+  XLSX.writeFile(wb, 'liste_etiquettes.xlsx');
+  msg('✅ liste_etiquettes.xlsx enregistré : envoyez-le au téléphone, puis « Importer Excel ».', 'ok');
+}
+$('#bExp').onclick = exportList;
+
+/* ============ Catalogue + scan ============ */
+let catalog = new Map(), stream = null, timer = null, last = '', lastT = 0;
+const ncode = c => String(c).trim().replace(/^0+/, '');
+function catInfo(x){ $('#catInfo').textContent = catalog.size ? `Catalogue : ${catalog.size} article(s) en mémoire${x || ''}` : 'Aucun catalogue chargé.'; }
+function setCatalog(list){
+  catalog = new Map(); list.forEach(r => { if (r.code) catalog.set(ncode(r.code), r); });
+  let x = '';
+  try { localStorage.setItem('CAT', JSON.stringify(list.map(({code, des, old, price}) => ({code, des, old, price})))); }
+  catch (e) { x = ' (trop volumineux pour la mémoire : à recharger à chaque session)'; }
+  catInfo(x);
+}
+function findArticle(v){
+  const k = ncode(v);
+  if (catalog.has(k)) return catalog.get(k);
+  for (const [c, r] of catalog) if (c.length >= 6 && k.includes(c)) return r;   // code-barres contenant le code article
+  return null;
+}
+function scanMsg(t, cls){ const m = $('#scanMsg'); m.textContent = t; m.className = cls || ''; $('#camMsg').textContent = t; }
+function addScanned(v){
+  v = String(v).trim(); if (!v) return false;
+  if (!catalog.size) { scanMsg("❌ Chargez d'abord le catalogue (fichier Excel).", 'err'); return false; }
+  const a = findArticle(v);
+  if (!a) { scanMsg(`❌ Code ${v} introuvable dans le catalogue`, 'err'); return false; }
+  let r = rows.find(x => x.code === a.code);
+  if (r) r.qty = (parseInt(r.qty) || 1) + 1; else { r = {code: a.code, des: a.des, old: a.old, price: a.price, qty: 1}; rows.push(r); }
+  sel = rows.indexOf(r); renderTable();
+  if (navigator.vibrate) navigator.vibrate(80);
+  scanMsg(`✅ ${a.des} — ${a.price} (×${r.qty})`, 'ok'); return true;
+}
+async function openCam(){
+  if (!catalog.size) return scanMsg("❌ Chargez d'abord le catalogue (fichier Excel).", 'err');
+  if (!('BarcodeDetector' in window)) return scanMsg("❌ Scan caméra non pris en charge : mettez Chrome à jour ou saisissez le code.", 'err');
+  try {
+    const want = ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'itf', 'codabar'];
+    const sup = await BarcodeDetector.getSupportedFormats();
+    const det = new BarcodeDetector({formats: want.filter(f => sup.includes(f))});
+    stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: {ideal: 'environment'}}, audio: false});
+    const v = $('#vid'); v.srcObject = stream; await v.play();
+    $('#cam').style.display = 'flex'; $('#camMsg').textContent = 'Visez le code-barres'; last = '';
+    timer = setInterval(async () => {
+      try {
+        const res = await det.detect(v); if (!res.length) return;
+        const val = res[0].rawValue, t = Date.now();
+        if (val === last && t - lastT < 2500) return;
+        last = val; lastT = t; addScanned(val);
+      } catch (e) {}
+    }, 300);
+  } catch (e) { scanMsg('❌ Caméra inaccessible : ' + e.message, 'err'); closeCam(); }
+}
+function closeCam(){ clearInterval(timer); if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; $('#cam').style.display = 'none'; }
+$('#fileCat').onchange = e => { if (e.target.files[0]) importFile(e.target.files[0], true); e.target.value = ''; };
+$('#bScan').onclick = openCam; $('#camClose').onclick = closeCam;
+$('#bManual').onclick = () => { if (addScanned($('#manual').value)) $('#manual').value = ''; };
+$('#manual').onkeydown = e => { if (e.key === 'Enter') $('#bManual').click(); };
+$('#bClear').onclick = () => { if (rows.length && confirm('Vider la liste des articles à imprimer ?')) { rows = []; sel = 0; nextBatch = null; $('#prog').innerHTML = ''; renderTable(); } };
+try { JSON.parse(localStorage.getItem('CAT') || '[]').forEach(r => catalog.set(ncode(r.code), r)); } catch (e) {}
+catInfo();
 
 /* ============ Tableau ============ */
 function renderTable(){

@@ -44,6 +44,15 @@ Les copies identiques d'une même ligne sont envoyées avec une seule image (`PR
 4. **Test 1 étiquette** puis **Imprimer** : les étiquettes partent par lots (10 par défaut) ; touchez « Envoyer le lot suivant ».
 5. **Exporter en PDF** : ouvre l'impression Android → *Enregistrer au format PDF* (secours si l'imprimante est indisponible).
 
+
+## 4 bis. Travail 100 % mobile : scanner les articles au rayon
+1. **📚 Charger le catalogue** : choisissez l'Excel complet (CODE | DESIGNATION | PRIX BARREE | PRIX DE VENTE). Il reste en mémoire du téléphone, à ne charger qu'à chaque nouvelle version du fichier.
+2. **📷 Scanner** : la caméra s'ouvre. Visez le code-barres d'un article : il est ajouté à la liste « Articles à imprimer » (vibration + message). Scanner deux fois le même article augmente sa Qté.
+3. Pas de caméra ou code abîmé : saisissez le code dans le champ et touchez **Ajouter** (un lecteur code-barres Bluetooth/USB qui « tape » le code fonctionne aussi).
+4. Fermez la caméra, vérifiez la liste, puis **Imprimer**. **🗑️ Vider la liste** prépare la série suivante.
+- Le code scanné est comparé à la colonne CODE (zéros de tête ignorés ; un code-barres qui contient le code article est aussi reconnu).
+- Le scan caméra utilise Chrome sur Android à jour (fonction BarcodeDetector).
+
 ## 5. Réglages utiles
 | Réglage | Rôle |
 |---|---|
