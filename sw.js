@@ -1,5 +1,5 @@
 // Service worker : fonctionnement hors ligne (cache-first). Incrémenter VERSION après chaque mise à jour.
-const VERSION = 'balisage-v1';
+const VERSION = 'balisage-v2';
 const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'vendor/xlsx.full.min.js', 'exemple_etiquettes.xlsx'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

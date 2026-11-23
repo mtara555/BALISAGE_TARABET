@@ -29,7 +29,6 @@ td.n input{width:64px}
 tr.sel{background:#eff6ff}tr.bad input{border-color:#b91c1c;background:#fef2f2}
 label.f{display:flex;flex-direction:column;font-size:13px;gap:3px}
 label.f input,label.f select{padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;width:130px}
-label.f input.wide{width:230px}
 .grid{display:flex;gap:12px;flex-wrap:wrap}
 canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-width:100%}
 #ov{position:fixed;inset:0;background:#000b;display:none;overflow:auto;z-index:9;padding:12px}
@@ -38,7 +37,6 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
 #pa{display:none}
 @media print{body>*:not(#pa){display:none!important}#pa{display:block}#pa img{display:block;width:65mm;height:38mm;break-after:page}@page{size:65mm 38mm;margin:0}}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js"></script>
 </head>
 <body>
 <header>🏷️ Étiquettes Balisage — 6,5 × 3,8 cm</header>
@@ -78,36 +76,18 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
   <div id="prog" style="margin-top:8px"></div>
   <details style="margin-top:10px"><summary>⚙️ Réglages</summary>
     <div class="grid" style="margin-top:8px">
-      <label class="f">Mode d'impression
-        <select id="sMode">
-          <option value="rawbt">Android (RawBT)</option>
-          <option value="windows">Windows (pont local)</option>
-        </select>
-      </label>
-      <label class="f">Type de pont Windows
-        <select id="sBridgeType">
-          <option value="qz">QZ Tray (recommandé)</option>
-          <option value="http">Serveur HTTP local</option>
-        </select>
-      </label>
-      <label class="f">URL du pont HTTP
-        <input id="sBridge" type="text" class="wide" value="http://127.0.0.1:9100/print">
-      </label>
-      <label class="f">Nom imprimante (QZ Tray)
-        <input id="sPrinter" type="text" class="wide" value="" placeholder="(vide = imprimante par défaut)">
-      </label>
       <label class="f">Résolution<select id="sDpi"><option>203</option><option>300</option></select></label>
       <label class="f">Marge (mm)<input id="sMargin" type="number" step="0.5" min="1" max="6"></label>
       <label class="f">Espacement inter-étiquettes (mm)<input id="sFeed" type="number" step="0.5" min="0" max="30"></label>
       <label class="f">Décalage gauche (mm)<input id="sLeft" type="number" step="0.5" min="0" max="20"></label>
       <label class="f">Largeur papier imprimable (mm)<input id="sPaper" type="number" step="1" min="40" max="104"></label>
-      <label class="f">Étiquettes par lot<input id="sBatch" type="number" min="1" max="50"></label>
+      <label class="f">Étiquettes par lot (RawBT)<input id="sBatch" type="number" min="1" max="50"></label>
       <label class="f">Date sur l'étiquette<input id="sDate"></label>
       <label class="f">Envoyer FF (saut au repère)<select id="sFF"><option value="0">Non</option><option value="1">Oui</option></select></label>
-    </div>
-    <div class="row" style="margin-top:10px">
-      <button class="sec" id="bTestBridge">🔌 Tester le pont local</button>
-      <span id="bridgeStatus" style="font-size:13px"></span>
+      <label class="f">Imprimante<select id="sPrn"><option value="citizen">Citizen CMP-30IIBT</option><option value="xp470b">Xprinter XP-470B</option></select></label>
+      <label class="f">Connexion<select id="sConn"><option value="rawbt">RawBT (Bluetooth / USB)</option><option value="usb">USB direct (XP-470B)</option></select></label>
+      <label class="f">Noir = bit 0 (TSPL)<select id="sInv"><option value="1">Oui (normal)</option><option value="0">Non (si négatif)</option></select></label>
+      <label class="f">Orientation (TSPL)<select id="sDir"><option value="0">Normale</option><option value="1">Rotation 180°</option></select></label>
     </div>
   </details>
 </section>
@@ -122,8 +102,7 @@ canvas.pv{width:65mm;height:38mm;border:1px dashed #6b7280;background:#fff;max-w
 /* ============ Utilitaires ============ */
 const $ = s => document.querySelector(s);
 const today = () => new Date().toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'numeric'});
-const DEF = {dpi:203, margin:2.5, feed:3, left:3.5, paper:72, batch:10, date:today(), ff:0,
-             mode:'rawbt', bridgeType:'qz', bridge:'http://127.0.0.1:9100/print', printer:''};
+const DEF = {dpi:203, margin:2.5, feed:3, left:3.5, paper:72, batch:10, date:today(), ff:0, prn:'citizen', conn:'rawbt', inv:1, dir:0};
 let S = Object.assign({}, DEF, JSON.parse(localStorage.getItem('S') || '{}'));
 S.date = today();
 let rows = [], sel = 0, nextBatch = null, jobs = [];
@@ -214,12 +193,12 @@ $('#file').onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]
 const P = ("212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 111242 121142 121241 114212 124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 114131 311141 411131 211412 211214 211232 2331112").split(' ');
 function code128(txt){
   let v = [];
-  if (/^\d+$/.test(txt) && txt.length >= 4) {
+  if (/^\d+$/.test(txt) && txt.length >= 4) {              // Code C (paires de chiffres)
     v = [105];
     const n = txt.length - (txt.length % 2);
     for (let i = 0; i < n; i += 2) v.push(+txt.substr(i, 2));
-    if (txt.length % 2) v.push(100, txt.charCodeAt(txt.length - 1) - 32);
-  } else {
+    if (txt.length % 2) v.push(100, txt.charCodeAt(txt.length - 1) - 32); // bascule B pour le dernier chiffre
+  } else {                                                  // Code B (ASCII)
     v = [104];
     for (const ch of txt) { const c = ch.charCodeAt(0); if (c >= 32 && c <= 126) v.push(c - 32); }
   }
@@ -228,7 +207,7 @@ function code128(txt){
   return v.map(x => P[x]).join('');
 }
 
-/* ============ Rendu d'une étiquette ============ */
+/* ============ Rendu d'une étiquette (coordonnées en unités 203 dpi : 520 × 304) ============ */
 const W0 = 520, H0 = 304, FONT = 'Arial, Helvetica, sans-serif';
 function wrap(x, text, maxW){
   const words = text.split(/\s+/).filter(Boolean), lines = []; let cur = '';
@@ -246,6 +225,7 @@ function drawLabel(cv, r){
   x.fillStyle = '#fff'; x.fillRect(0, 0, W0, H0); x.fillStyle = '#000'; x.strokeStyle = '#000';
   const M = Math.round(S.margin / 25.4 * 203);
 
+  // CODE (haut gauche) et PRIX BARRÉ (haut droite, barré)
   const old = num(r.old);
   let oldW = 0;
   if (old) {
@@ -258,6 +238,7 @@ function drawLabel(cv, r){
   while (fs > 12 && x.measureText(r.code).width > W0 - 2 * M - oldW - 14) x.font = `bold ${--fs}px ${FONT}`;
   x.fillText(r.code, M, M + 20);
 
+  // DESIGNATION : 3 lignes max, police réduite si besoin, sinon troncature « … »
   const des = String(r.des).toUpperCase(), top = M + 38, maxH = 100, maxW = W0 - 2 * M;
   let size = 38, lines;
   for (; size >= 18; size -= 2) {
@@ -271,6 +252,7 @@ function drawLabel(cv, r){
   x.textAlign = 'left'; x.font = `bold ${size}px ${FONT}`;
   lines.forEach((l, i) => x.fillText(l, M, top + size * 0.9 + i * size * 1.08));
 
+  // PRIX DE VENTE : entier grand + décimales en petit
   const pr = num(r.price);
   if (pr != null && !isNaN(pr)) {
     const [ip, dp] = pr.toFixed(2).split('.'), base = H0 - M - 12;
@@ -281,6 +263,7 @@ function drawLabel(cv, r){
     x.font = `bold ${Math.round(ps * 0.36)}px ${FONT}`; x.fillText(',' + dp, M + iw + 2, base);
   }
 
+  // Code-barres (bas droite) + date
   const bx = 312, bw = W0 - M - bx;
   if (r.code) {
     const bars = code128(String(r.code)), mods = [...bars].reduce((a, c) => a + +c, 0);
@@ -315,7 +298,7 @@ function showPreview(){
   $('#ov').style.display = 'block';
 }
 
-/* ============ Impression ESC/POS raster ============ */
+/* ============ Impression ESC/POS raster (Citizen CMP-30II) via RawBT ============ */
 function raster(cv){
   const W = Math.round(S.paper / 25.4 * S.dpi / 8) * 8, H = cv.height, left = Math.round(S.left / 25.4 * S.dpi);
   const t = document.createElement('canvas'); t.width = W; t.height = H;
@@ -329,110 +312,85 @@ function raster(cv){
   }
   return out;
 }
-function buildJob(list){
+const cat = parts => { const o = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let k = 0; parts.forEach(p => { o.set(p, k); k += p.length; }); return o; };
+/* Citizen CMP-30II : ESC/POS raster */
+function jobEscpos(list){
   const parts = [new Uint8Array([0x1B, 0x40])], cv = document.createElement('canvas');
-  let feed = Math.round(S.feed / 25.4 * S.dpi);
+  const feed = Math.round(S.feed / 25.4 * S.dpi);
   for (const r of list) {
     drawLabel(cv, r); parts.push(raster(cv));
     for (let f = feed; f > 0; f -= 255) parts.push(new Uint8Array([0x1B, 0x4A, Math.min(255, f)]));
     if (+S.ff) parts.push(new Uint8Array([0x0C]));
   }
-  const n = parts.reduce((a, p) => a + p.length, 0), all = new Uint8Array(n); let o = 0;
-  parts.forEach(p => { all.set(p, o); o += p.length; });
-  let s = ''; for (let i = 0; i < n; i += 8192) s += String.fromCharCode.apply(null, all.subarray(i, i + 8192));
-  return btoa(s);
+  return cat(parts);
 }
-
-/* ============ Envoi : RawBT / QZ Tray / HTTP ============ */
-function bytesFromB64(b64){
-  const bin = atob(b64), bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-async function sendJob(b64){
-  // --- Android / RawBT ---
-  if (S.mode === 'rawbt') {
-    location.href = 'intent:base64,' + b64 +
-      '#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;';
-    return;
-  }
-
-  // --- Windows : QZ Tray ---
-  if (S.bridgeType === 'qz') {
-    try {
-      if (!qz.websocket.isActive()) await qz.websocket.connect();
-      const printer = S.printer || await qz.printers.getDefault();
-      const cfg = qz.configs.create(printer);
-      const hex = Array.from(bytesFromB64(b64))
-        .map(c => '\\x' + c.toString(16).padStart(2, '0')).join('');
-      const data = [{ type: 'raw', format: 'command', data: hex }];
-      await qz.print(cfg, data);
-      msg('✅ Lot envoyé à QZ Tray (' + printer + ').', 'ok');
-    } catch (e) {
-      msg('❌ QZ Tray : ' + (e.message || e), 'err');
+/* Xprinter XP-470B : TSPL (imprimante d'étiquettes, détection d'espace gérée par l'imprimante) */
+function jobTspl(list){
+  const enc = new TextEncoder(), cv = document.createElement('canvas');
+  const parts = [enc.encode(`SIZE 65 mm,38 mm\r\nGAP ${S.feed} mm,0 mm\r\nDIRECTION ${S.dir}\r\n`)];
+  for (let i = 0; i < list.length;) {
+    let n = 1; while (i + n < list.length && list[i + n] === list[i]) n++;   // copies identiques : PRINT 1,n
+    drawLabel(cv, list[i]);
+    const W = Math.ceil(cv.width / 8) * 8, H = cv.height, wb = W / 8;
+    const t = document.createElement('canvas'); t.width = W; t.height = H;
+    const c = t.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, W, H); c.drawImage(cv, 0, 0);
+    const d = c.getImageData(0, 0, W, H).data, bm = new Uint8Array(wb * H);
+    for (let y = 0; y < H; y++) for (let xb = 0; xb < wb; xb++) {
+      let b = 0;
+      for (let bit = 0; bit < 8; bit++) { const p = (y * W + xb * 8 + bit) * 4; if (d[p] * .3 + d[p + 1] * .59 + d[p + 2] * .11 < 140) b |= 0x80 >> bit; }
+      bm[y * wb + xb] = +S.inv ? (~b & 255) : b;
     }
-    return;
+    parts.push(enc.encode(`CLS\r\nBITMAP 0,0,${wb},${H},0,`), bm, enc.encode(`\r\nPRINT 1,${n}\r\n`));
+    i += n;
   }
-
-  // --- Windows : serveur HTTP local (Node.js) ---
-  try {
-    const resp = await fetch(S.bridge, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: bytesFromB64(b64)
-    });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    msg('✅ Lot envoyé au pont HTTP.', 'ok');
-  } catch (e) {
-    msg('❌ Pont HTTP injoignable (' + e.message + ').\n' +
-        'Vérifiez que le serveur tourne sur ' + S.bridge, 'err');
-  }
+  return cat(parts);
 }
-
-async function startPrint(){
+/* Envoi : RawBT (intent) ou USB direct (WebUSB, Chrome Android + câble OTG) */
+function sendRawbt(bytes){
+  let s = ''; for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  location.href = 'intent:base64,' + btoa(s) + '#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;';
+}
+async function getUsb(){
+  if (!navigator.usb) throw new Error("USB direct indisponible : utilisez Chrome sur Android avec un câble OTG, ou choisissez RawBT.");
+  const known = await navigator.usb.getDevices();
+  return known[0] || await navigator.usb.requestDevice({filters: [{classCode: 7}]});
+}
+async function writeUsb(dev, bytes){
+  await dev.open(); if (!dev.configuration) await dev.selectConfiguration(1);
+  let ifc, alt;
+  for (const i of dev.configuration.interfaces) { const a = i.alternates.find(x => x.interfaceClass === 7); if (a) { ifc = i; alt = a; break; } }
+  if (!ifc) throw new Error('Interface imprimante introuvable.');
+  await dev.claimInterface(ifc.interfaceNumber);
+  if (alt.alternateSetting) await dev.selectAlternateInterface(ifc.interfaceNumber, alt.alternateSetting);
+  const ep = alt.endpoints.find(e => e.direction === 'out');
+  for (let o = 0; o < bytes.length; o += 16384) await dev.transferOut(ep.endpointNumber, bytes.slice(o, o + 16384));
+  await dev.releaseInterface(ifc.interfaceNumber); await dev.close();
+}
+async function dispatch(list){
+  const usb = (S.prn === 'xp470b' && S.conn === 'usb') ? await getUsb() : null;   // à appeler dans le geste tactile
+  const bytes = S.prn === 'xp470b' ? jobTspl(list) : jobEscpos(list);
+  if (usb) await writeUsb(usb, bytes); else sendRawbt(bytes);
+}
+function startPrint(){
   if (!check()) return;
   const all = expanded(), n = Math.max(1, +S.batch || 10);
   jobs = []; for (let i = 0; i < all.length; i += n) jobs.push(all.slice(i, i + n));
-  nextBatch = 0; await sendNext();
+  nextBatch = 0; sendNext();
 }
 async function sendNext(){
   if (nextBatch == null || nextBatch >= jobs.length) return;
   const i = nextBatch++; msg(`Envoi du lot ${i + 1}/${jobs.length}…`, 'ok');
-  await sendJob(buildJob(jobs[i]));
-  $('#prog').innerHTML = nextBatch < jobs.length
-    ? `<button id="bNext">Envoyer le lot suivant (${nextBatch + 1}/${jobs.length})</button>`
-    : '✅ Dernier lot envoyé.';
+  try { await dispatch(jobs[i]); } catch (e) { nextBatch = i; return msg('❌ ' + e.message, 'err'); }
+  $('#prog').innerHTML = nextBatch < jobs.length ? `<button id="bNext">Envoyer le lot suivant (${nextBatch + 1}/${jobs.length})</button>` : '✅ Dernier lot envoyé.';
   const b = $('#bNext'); if (b) b.onclick = sendNext;
 }
 async function testPrint(){
   const r = rows[sel]; if (!r) return msg('❌ Sélectionnez un article.', 'err');
   if (!check()) return;
-  await sendJob(buildJob([r]));
+  try { await dispatch([r]); msg('Test envoyé.', 'ok'); } catch (e) { msg('❌ ' + e.message, 'err'); }
 }
 
-/* ============ Test du pont local ============ */
-async function testBridge(){
-  const st = $('#bridgeStatus');
-  st.textContent = '⏳ Test en cours…'; st.className = '';
-  try {
-    if (S.bridgeType === 'qz') {
-      if (!qz.websocket.isActive()) await qz.websocket.connect();
-      const printers = await qz.printers.find();
-      st.textContent = '✅ QZ Tray OK. Imprimantes détectées : ' +
-        (printers.length ? printers.join(', ') : '(aucune)');
-      st.className = 'ok';
-      return;
-    }
-    const resp = await fetch(S.bridge.replace(/\/print\/?$/, '/ping'), {method:'GET'});
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    st.textContent = '✅ Pont HTTP accessible.'; st.className = 'ok';
-  } catch (e) {
-    st.textContent = '❌ ' + (e.message || e); st.className = 'err';
-  }
-}
-
-/* ============ Export PDF ============ */
+/* ============ Export PDF (impression navigateur → « Enregistrer au format PDF ») ============ */
 function exportPdf(){
   if (!check()) return;
   const pa = $('#pa'); pa.innerHTML = '';
@@ -445,26 +403,12 @@ function exportPdf(){
 }
 
 /* ============ Réglages ============ */
-const map = {sDpi:'dpi', sMargin:'margin', sFeed:'feed', sLeft:'left', sPaper:'paper',
-             sBatch:'batch', sDate:'date', sFF:'ff', sMode:'mode',
-             sBridgeType:'bridgeType', sBridge:'bridge', sPrinter:'printer'};
-const stringKeys = new Set(['date','mode','bridgeType','bridge','printer']);
+const map = {sDpi:'dpi', sMargin:'margin', sFeed:'feed', sLeft:'left', sPaper:'paper', sBatch:'batch', sDate:'date', sFF:'ff', sPrn:'prn', sConn:'conn', sInv:'inv', sDir:'dir'};
 Object.entries(map).forEach(([id, k]) => {
   const el = $('#' + id); el.value = S[k];
-  el.onchange = () => {
-    if (stringKeys.has(k)) S[k] = el.value;
-    else S[k] = parseFloat(el.value) || 0;
-    if (id === 'sDpi') S.dpi = +el.value;
-    localStorage.setItem('S', JSON.stringify(S));
-    drawPreview();
-  };
+  el.onchange = () => { S[k] = ['sDate', 'sPrn', 'sConn'].includes(id) ? el.value : parseFloat(el.value) || 0; if (id === 'sDpi') S.dpi = +el.value; localStorage.setItem('S', JSON.stringify(S)); drawPreview(); };
 });
-
-$('#bPrev').onclick = showPreview;
-$('#bPrint').onclick = startPrint;
-$('#bTest').onclick = testPrint;
-$('#bPdf').onclick = exportPdf;
-$('#bTestBridge').onclick = testBridge;
+$('#bPrev').onclick = showPreview; $('#bPrint').onclick = startPrint; $('#bTest').onclick = testPrint; $('#bPdf').onclick = exportPdf;
 $('#oClose').onclick = () => $('#ov').style.display = 'none';
 $('#oPrint').onclick = () => { $('#ov').style.display = 'none'; startPrint(); };
 window.addEventListener('afterprint', () => $('#pa').innerHTML = '');

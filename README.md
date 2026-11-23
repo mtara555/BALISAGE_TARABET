@@ -1,4 +1,4 @@
-# Étiquettes Balisage — PWA Android (Citizen CMP-30IIBT)
+# Étiquettes Balisage — PWA Android (Citizen CMP-30IIBT / Xprinter XP-470B)
 
 Application web installable (PWA), 100 % hors ligne après la première ouverture.
 Étiquette **6,5 × 3,8 cm** : CODE, DESIGNATION, PRIX BARRÉ, PRIX DE VENTE (décimales en petit), code-barres Code128 et date.
@@ -18,6 +18,24 @@ Application web installable (PWA), 100 % hors ligne après la première ouvertur
 1. Allumez l'imprimante → Paramètres Android → Bluetooth → **associez** la CMP-30IIBT (code PIN souvent `0000` ou `1234`).
 2. Ouvrez **RawBT** → *Imprimante* → choisissez la CMP-30IIBT → mode **ESC/POS**, largeur **80 mm / 576 points**, résolution 203 dpi → *Test d'impression*.
 3. Chargez le rouleau d'étiquettes. Si l'imprimante est réglée sur le capteur d'espace (gap) ou de repère noir (réglage Citizen, hors application), mettez **« Envoyer FF »** sur *Oui* dans les réglages de l'application pour qu'elle avance à l'étiquette suivante. Sinon (rouleau continu), utilisez **Espacement inter-étiquettes** (3 mm par défaut).
+
+
+## 3 bis. Xprinter XP-470B (imprimante d'étiquettes, langage TSPL)
+1. Dans l'application : ⚙️ Réglages → **Imprimante : Xprinter XP-470B**.
+2. Choisissez la **connexion** :
+   - **USB direct** : câble USB-OTG entre le téléphone et l'imprimante, Chrome sur Android. Au premier envoi, Android demande l'autorisation USB : acceptez.
+   - **RawBT** : dans RawBT, choisissez l'imprimante en USB ou Bluetooth (selon votre exemplaire), puis utilisez le mode « RawBT ».
+3. Chargez le rouleau 65 × 38 mm. Faites une **auto-calibration** du capteur d'espace (maintenir le bouton FEED à l'allumage, selon le manuel XP-470B).
+4. Touchez **Test 1 étiquette**, puis ajustez si besoin :
+
+| Symptôme | Réglage |
+|---|---|
+| Image en négatif (fond noir) | *Noir = bit 0 (TSPL)* → **Non** |
+| Étiquette à l'envers | *Orientation* → **Rotation 180°** |
+| Décalage entre étiquettes | *Espacement inter-étiquettes* = valeur de l'espace du rouleau (mm) |
+| Rien ne sort | Imprimez la page d'auto-test et vérifiez que le langage est **TSPL** |
+
+Les copies identiques d'une même ligne sont envoyées avec une seule image (`PRINT 1,n`), donc l'envoi est plus rapide.
 
 ## 4. Utilisation
 1. **Importer Excel** : fichier .xlsx / .xls / .csv, ligne 1 = `CODE | DESIGNATION | PRIX BARREE | PRIX DE VENTE` (voir `exemple_etiquettes.xlsx`).
